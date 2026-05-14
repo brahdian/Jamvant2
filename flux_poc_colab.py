@@ -16,18 +16,22 @@ def generate_synthetic_data(batch_size, seq_len, vocab_size):
 def run_flux_poc():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Running on: {device}")
+
+    # POC scale: 8*64 = 512 d_model
     model = RecursiveFluxEngine(d_model=512, n_layers=12).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4)
     scaler = GradScaler()
 
     model.train()
-    for i in range(10): # Shorter test for verification
+    for i in range(10):
         input_ids, labels = generate_synthetic_data(4, 32, 50257)
         input_ids, labels = input_ids.to(device), labels.to(device)
         optimizer.zero_grad()
         with autocast():
-            logits, p_dist = model(input_ids)
-            loss = nn.CrossEntropyLoss()(logits.view(-1, logits.size(-1)), labels.view(-1)) + 0.01 * stability_loss(p_dist)
+            # Correctly handle 3-tuple return
+            logits, p_dist, _ = model(input_ids)
+            ce_loss = nn.CrossEntropyLoss()(logits.view(-1, logits.size(-1)), labels.view(-1))
+            loss = ce_loss + 0.01 * stability_loss(p_dist)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
